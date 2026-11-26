@@ -374,6 +374,27 @@ public class BookStoreTest {
 				&& booksInStorePreTest.size() == booksInStorePostTest.size());
 	}
 
+	/**
+	 * Tests that books returned to clients do not expose stock information,
+	 * such as the number of copies and sales misses.
+	 *
+	 * @throws BookStoreException
+	 *             the book store exception
+	 */
+	@Test
+	public void testClientViewHidesStockInfo() throws BookStoreException {
+		Set<Integer> isbnSet = new HashSet<Integer>();
+		isbnSet.add(TEST_ISBN);
+
+		List<Book> booksFromGetBooks = client.getBooks(isbnSet);
+		List<Book> booksFromTopRated = client.getTopRatedBooks(1);
+
+		assertEquals(1, booksFromGetBooks.size());
+		assertEquals(1, booksFromTopRated.size());
+		assertFalse(booksFromGetBooks.get(0) instanceof StockBook);
+		assertFalse(booksFromTopRated.get(0) instanceof StockBook);
+	}
+
 //	Tests on getBooksInDemand:
 //	Test inDemand is empty before any miss
 	@Test

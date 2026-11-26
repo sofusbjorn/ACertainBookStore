@@ -379,6 +379,50 @@ public class StockManagerTest {
 	}
 
 	/**
+	 * Tests that updateEditorPicks flags no books when one of the ISBNs is not
+	 * in the store.
+	 *
+	 * @throws BookStoreException
+	 *             the book store exception
+	 */
+	@Test
+	public void testUpdateEditorPicksAllOrNothing() throws BookStoreException {
+		Set<BookEditorPick> editorPicksVals = new HashSet<BookEditorPick>();
+		// The HashSet iterates TEST_ISBN before TEST_ISBN - 1, so a non-atomic
+		// implementation would flag the default book before failing.
+		editorPicksVals.add(new BookEditorPick(TEST_ISBN, true)); // in the store
+		editorPicksVals.add(new BookEditorPick(TEST_ISBN - 1, true)); // not in the store
+
+		try {
+			storeManager.updateEditorPicks(editorPicksVals);
+			fail();
+		} catch (BookStoreException ex) {
+			;
+		}
+
+		// The default book was not flagged either.
+		assertEquals(0, client.getEditorPicks(1).size());
+	}
+
+	/**
+	 * Tests that getEditorPicks rejects a negative number of books.
+	 *
+	 * @throws BookStoreException
+	 *             the book store exception
+	 */
+	@Test
+	public void testGetEditorPicksInvalidK() throws BookStoreException {
+		addEditorPick(TEST_ISBN, true);
+
+		try {
+			client.getEditorPicks(-1);
+			fail();
+		} catch (BookStoreException ex) {
+			;
+		}
+	}
+
+	/**
 	 * Checks that a book can be removed.
 	 *
 	 * @throws BookStoreException
@@ -420,6 +464,36 @@ public class StockManagerTest {
 		// Check that the books were removed.
 		booksInStoreList = storeManager.getBooks();
 		assertTrue(booksInStoreList.containsAll(booksAdded) && booksInStoreList.size() == booksAdded.size());
+	}
+
+	/**
+	 * Tests that removeBooks removes no books when one of the ISBNs is not in
+	 * the store.
+	 *
+	 * @throws BookStoreException
+	 *             the book store exception
+	 */
+	@Test
+	public void testRemoveBooksAllOrNothing() throws BookStoreException {
+		List<StockBook> booksInStorePreTest = storeManager.getBooks();
+
+		Set<Integer> isbnSet = new HashSet<Integer>();
+		// The HashSet iterates TEST_ISBN before TEST_ISBN - 1, so a non-atomic
+		// implementation would remove the default book before failing.
+		isbnSet.add(TEST_ISBN); // in the store
+		isbnSet.add(TEST_ISBN - 1); // not in the store
+
+		try {
+			storeManager.removeBooks(isbnSet);
+			fail();
+		} catch (BookStoreException ex) {
+			;
+		}
+
+		// The default book was not removed either.
+		List<StockBook> booksInStorePostTest = storeManager.getBooks();
+		assertTrue(booksInStorePreTest.containsAll(booksInStorePostTest)
+				&& booksInStorePreTest.size() == booksInStorePostTest.size());
 	}
 
 	/**
