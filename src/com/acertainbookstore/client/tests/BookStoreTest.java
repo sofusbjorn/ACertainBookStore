@@ -40,7 +40,7 @@ public class BookStoreTest {
 	private static final int NUM_COPIES = 5;
 
 	/** The local test. */
-	private static boolean localTest = false;
+	private static boolean localTest = true;
 
 	/** The store manager. */
 	private static StockManager storeManager;
@@ -266,6 +266,29 @@ public class BookStoreTest {
 	}
 
 	/**
+	 * Test that buying zero books does not change stock
+	 * @throws BookStore
+	 */
+	@Test
+	public void testBuyZeroNumberOfBookCopies() throws BookStoreException {
+		List<StockBook> booksInStorePreTest = storeManager.getBooks();
+
+		HashSet<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN,0));
+
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+		List<StockBook> booksInStorePostTest = storeManager.getBooks();
+		assertTrue(booksInStorePreTest.containsAll(booksInStorePostTest)
+				&& booksInStorePreTest.size() == booksInStorePostTest.size());
+
+	}
+
+	/**
 	 * Tests that all books can be retrieved.
 	 *
 	 * @throws BookStoreException
@@ -349,6 +372,229 @@ public class BookStoreTest {
 		List<StockBook> booksInStorePostTest = storeManager.getBooks();
 		assertTrue(booksInStorePreTest.containsAll(booksInStorePostTest)
 				&& booksInStorePreTest.size() == booksInStorePostTest.size());
+	}
+
+//	Tests on getBooksInDemand:
+//	Test inDemand is empty before any miss
+	@Test
+	public void testNoneInDemandBeforeAnyMiss() throws BookStoreException {
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+
+		assertEquals(0, booksInDemand.size());
+	}
+
+//	Test buying to stock 0 will not trigger flagging
+	@Test
+	public void testBuyingLastStockWillNotPutBookInDemand() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES));
+
+		// Buying the last copies in stock
+		client.buyBooks(booksToBuy);
+
+		// The book is sold out
+		assertEquals(0, storeManager.getBooks().get(0).getNumCopies());
+
+		// but not in demand
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+		assertEquals(0, booksInDemand.size());
+	}
+
+//	Test buying when stock 0 will trigger flagging
+	@Test
+	public void testBuyingWhenNoStockPutsBookInDemand() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES));
+
+		// Buying the last copies in stock
+		client.buyBooks(booksToBuy);
+
+		// Asking for a copy when there is no stock
+		booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, 1));
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+		assertEquals(1, booksInDemand.size());
+
+		StockBook bookInDemand = booksInDemand.get(0);
+		assertTrue(bookInDemand.getISBN() == TEST_ISBN && bookInDemand.getNumSaleMisses() == 1);
+	}
+
+//	Test is book in demand
+	@Test
+	public void testCertainBookIsInDemand() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES + 1));
+
+		// Asking for more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+        assertEquals(1, booksInDemand.size());
+
+		StockBook bookInDemand = booksInDemand.get(0);
+		assertTrue(bookInDemand.getISBN() == TEST_ISBN && bookInDemand.getNumSaleMisses() == 1);
+	}
+
+//	Test is list of books in demand
+	@Test
+	public void testMultipleBooksInDemand() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		addBooks(TEST_ISBN + 1, NUM_COPIES);
+		List<StockBook> expectedBooks = storeManager.getBooks();
+
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES + 1));
+		booksToBuy.add(new BookCopy(TEST_ISBN + 1, NUM_COPIES + 1));
+		// Asking for more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+		assertTrue(expectedBooks.containsAll(booksInDemand) && expectedBooks.size() == booksInDemand.size());
+
+	}
+
+//	Test buyBooks does not flag when part of order fails - all-or-nothing.
+	@Test
+	public void testBuyBooksEnforcesAllOrNothingSemantics() throws BookStoreException {
+		addBooks(TEST_ISBN + 1, NUM_COPIES);
+
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, 1)); // enough copies in stock
+		booksToBuy.add(new BookCopy(TEST_ISBN + 1, NUM_COPIES + 1)); // more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		// Only the book without enough copies is flagged
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+		assertEquals(1, booksInDemand.size());
+
+		StockBook bookInDemand = booksInDemand.get(0);
+		assertTrue(bookInDemand.getISBN() == TEST_ISBN + 1 && bookInDemand.getNumSaleMisses() == 1);
+
+		// Nothing is sold when the order fails
+		List<StockBook> booksInStorePostTest = storeManager.getBooks();
+		assertTrue(booksInStorePostTest.size() == 2);
+		for (StockBook book : booksInStorePostTest) {
+			assertTrue(book.getNumCopies() == NUM_COPIES);
+		}
+	}
+
+//	Test InDemand list shrinks when stock is added
+	@Test
+	public void testInDemandShrinksWhenBookIsRestocked() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		addBooks(TEST_ISBN + 1, NUM_COPIES);
+
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES + 1));
+		booksToBuy.add(new BookCopy(TEST_ISBN + 1, NUM_COPIES + 1));
+		// Asking for more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		// Both books are in demand
+		assertEquals(2, storeManager.getBooksInDemand().size());
+
+		// Restocking one of the books
+		Set<BookCopy> bookCopiesSet = new HashSet<BookCopy>();
+		bookCopiesSet.add(new BookCopy(TEST_ISBN, NUM_COPIES));
+		storeManager.addCopies(bookCopiesSet);
+
+		// Only the book that was not restocked is still in demand
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+		assertEquals(1, booksInDemand.size());
+
+		StockBook bookInDemand = booksInDemand.get(0);
+		assertTrue(bookInDemand.getISBN() == TEST_ISBN + 1 && bookInDemand.getNumSaleMisses() == 1);
+	}
+
+//	Test miss count is correct
+	@Test
+	public void testMissCountIsUpdatedCorrectly() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES + 1));
+
+		// Asking for one copy more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		booksToBuy = new HashSet<BookCopy>();
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES + 3));
+
+		// Asking for three copies more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		List<StockBook> booksInDemand = storeManager.getBooksInDemand();
+		assertEquals(1, booksInDemand.size());
+
+		// The misses of both orders are added up
+		StockBook bookInDemand = booksInDemand.get(0);
+		assertTrue(bookInDemand.getISBN() == TEST_ISBN && bookInDemand.getNumSaleMisses() == 4);
+	}
+
+//	Test inDemand list stays same when same buyBooks sends same flag.
+	@Test
+	public void testInDemandStaysInDemandAfterOrders() throws BookStoreException {
+		Set<BookCopy> booksToBuy = new HashSet<BookCopy>();
+		addBooks(TEST_ISBN + 1, NUM_COPIES);
+
+		booksToBuy.add(new BookCopy(TEST_ISBN, NUM_COPIES + 1));
+		booksToBuy.add(new BookCopy(TEST_ISBN + 1, NUM_COPIES + 1));
+		// Asking for more than is in stock
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		List<StockBook> booksInDemandBefore = storeManager.getBooksInDemand();
+		assertEquals(2, booksInDemandBefore.size());
+
+		// Sending the same order again
+		try {
+			client.buyBooks(booksToBuy);
+			fail();
+		} catch (BookStoreException ignored) {
+			;
+		}
+
+		// The same books are in demand, each only once
+		List<StockBook> booksInDemandAfter = storeManager.getBooksInDemand();
+		assertEquals(booksInDemandBefore.size(), booksInDemandAfter.size());
+		assertTrue(booksInDemandAfter.containsAll(booksInDemandBefore));
 	}
 
 	// Ratebooks:
